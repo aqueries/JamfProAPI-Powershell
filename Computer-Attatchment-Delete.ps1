@@ -24,7 +24,7 @@ $jamfUser = "username"
 ###################################
 function getAuth()
 {
-    $url = "https://$JamfTennantId/uapi/auth/tokens"
+    $url = "https://$JamfTennantId/v1/auth/token"
     $creds = Get-Credential
 
     $call = Invoke-RestMethod -Method Post -Credential $creds -Authentication Basic -Uri $url -ContentType "application/json;charset=UTF-8"
