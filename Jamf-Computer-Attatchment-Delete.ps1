@@ -17,24 +17,43 @@ Use this script at your own risk.
 #If your Jamf Pro instance is running on a different port add the port to the below string as well.
 #E.G: tenant.jamfcloud.com or jamf.domain.com:8443
 $JamfTennantId = "tennant.jamfcloud.com"
-$jamfUser = "username"
 
 ###################################
 ## Functions
 ###################################
-function getAuth()
-{
-    $url = "https://$JamfTennantId/v1/auth/token"
-    $creds = Get-Credential
+function getAuth() {
+    $uri = "https://$JamfTennantId/api/v1/auth/token"
+    
+    # Check if a token exists in the environment
+    if ($env:JamfToken) {
+        Write-Host "Using existing token."
+        return @{
+            'token' = $env:JamfToken
+        }
+    } else {
+        $creds = Get-Credential
 
-    $call = Invoke-RestMethod -Method Post -Credential $creds -Authentication Basic -Uri $url -ContentType "application/json;charset=UTF-8"
-    return $call
+        $call = Invoke-RestMethod -Method Post -Credential $creds -Authentication Basic -Uri $uri -ContentType "application/json;charset=UTF-8"
+        
+        # Store the token in the environment
+        $env:JamfToken = $call.token
 
+        return $call
+    }
 }
+
+function endAuth($token)
+{
+    $uri = "https://$JamfTennantId/api/v1/auth/invalidate-token"
+    $headers = @{Authorization = "Bearer $token"}
+    Invoke-RestMethod -Method Get -Uri $uri -Headers $headers
+    
+}
+
 function getAllComputers()
 {
     $section="GENERAL"
-    $uri = "https://$JamfTennantId/api/v1/computers-inventory?section=$section&page-size=9999&sort=id%3Aasc"
+    $uri = "https://$JamfTennantId/api/v1/computers-inventory?section=$section&page-size=2000&sort=id%3Aasc"
     $headers = @{Authorization = "Bearer $token"; "Content-Type" = "application/json; charset=utf-8"}
 
     $call = (Invoke-RestMethod -Method Get -Uri $uri -Headers $headers).results
@@ -98,6 +117,7 @@ foreach ($computerId in $computerIds)
     #Loop over attatchment list and delete attatchment.
     foreach ($attatchmentId in $attatchmentIds) {
         Write-Host "This attatchment ID is:" $attatchmentId
-        deleteAttatchment -computerId $computerId -attatchmentId $attatchmentId
+        #deleteAttatchment -computerId $computerId -attatchmentId $attatchmentId
     }
 }
+endAuth($token)
