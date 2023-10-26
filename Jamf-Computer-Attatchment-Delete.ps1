@@ -117,7 +117,7 @@ foreach ($computerId in $computerIds)
     #Loop over attatchment list and delete attatchment.
     foreach ($attatchmentId in $attatchmentIds) {
         Write-Host "This attatchment ID is:" $attatchmentId
-        #deleteAttatchment -computerId $computerId -attatchmentId $attatchmentId
+        deleteAttatchment -computerId $computerId -attatchmentId $attatchmentId
     }
 }
 endAuth($token)
