@@ -94,7 +94,6 @@ function sendEnableRecoveryLockPasswordMDMCommand ($computerManagmentId) {
     $response = Invoke-WebRequest -Uri "https://$JamfTennantId/api/preview/mdm/commands" -Method POST -Headers $headers -Body $json
 
     if ($response.StatusCode -eq 201) {
-        Write-Host "Recovery Lock command sent to computer successfully"
         return "Recovery Lock command sent to computer successfully"
     }
     else {
