@@ -22,58 +22,88 @@ $JamfTennantId = "tennant.jamfcloud.com"
 ## Functions
 ###################################
 
-function getAuth() {
-    $uri = "https://$JamfTennantId/api/v1/auth/token"
-    
-    # Check if a token exists in the environment
-    if ($env:JamfToken) {
-        Write-Host "Using existing token."
-        return @{
-            'token' = $env:JamfToken
-        }
-    } else {
-        $creds = Get-Credential
+function getToken() {
 
-        $call = Invoke-RestMethod -Method Post -Credential $creds -Authentication Basic -Uri $uri -ContentType "application/json;charset=UTF-8"
-        
-        # Store the token in the environment
-        $env:JamfToken = $call.token
+    $Username = "jamfapiuser"
+    $Password = "jamfapipassword"
 
-        return $call
+    $pair = "$($Username):$($Password)"
+    $bytes = [System.Text.Encoding]::ASCII.GetBytes($pair)
+    $base64 = [System.Convert]::ToBase64String($bytes)
+    $basicAuthValue = "Basic $base64"
+
+    $headers=@{}
+    $headers.Add("Accept", "*/*")
+    $headers.Add("Authorization", $basicAuthValue)    
+    $response = Invoke-WebRequest -Uri "https://$JamfTennantId/api/v1/auth/token" -Method POST -Headers $headers
+    return ConvertFrom-Json $response.Content
+}
+
+function getComputersFromAdvancedSearch($searchId) {
+    $token = getToken
+    $RealToken = $token.token
+    $tokenAuth = "Bearer $RealToken"
+
+    $headers=@{}
+    $headers.Add("Accept", "application/json")
+    $headers.Add("Authorization", $tokenAuth)
+    $response = Invoke-WebRequest -Uri "https://$JamfTennantId/JSSResource/advancedcomputersearches/id/$searchId" -Method GET -Headers $headers
+
+    #return $response
+    return (ConvertFrom-Json $response.Content).advanced_computer_search.computers
+
     }
-}
 
+function getComputerManagementIdByComputerId($computerId) {
+    $token = getToken
+    $RealToken = $token.token
+    $tokenAuth = "Bearer $RealToken"
 
-function endAuth($token)
-{
-    $uri = "https://$JamfTennantId/api/v1/auth/invalidate-token"
-    $headers = @{Authorization = "Bearer $token"}
-    Invoke-RestMethod -Method Get -Uri $uri -Headers $headers
+    $headers=@{}
+    $headers.Add("Accept", "application/json")
+    $headers.Add("Authorization", $tokenAuth)
+    $response = Invoke-WebRequest -Uri "https://$JamfTennantId/api/v1/computers-inventory-detail/$computerId" -Method GET -Headers $headers
+
+    #return $response
+    return (ConvertFrom-Json $response.Content).general.managementId
+
+    }
+
+function sendEnableRecoveryLockPasswordMDMCommand ($computerManagmentId) {
+    $token = getToken
+    $RealToken = $token.token
+    $tokenAuth = "Bearer $RealToken"
+
+    $data = @{
+        commandData = @{
+            commandType = "SET_RECOVERY_LOCK"
+            newPassword = $recoveryPassword
+        }
+        clientData = @(@{
+            managementId = $computerManagmentId
+        })
+    }
+
+    $json = $data | ConvertTo-Json
+    
+
+    $headers=@{}
+    $headers.Add("Accept", "application/json")
+    $headers.Add("content-type", "application/json")
+    $headers.Add("Authorization", $tokenAuth)
+    $response = Invoke-WebRequest -Uri "https://$JamfTennantId/api/preview/mdm/commands" -Method POST -Headers $headers -Body $json
+
+    if ($response.StatusCode -eq 201) {
+        Write-Host "Recovery Lock command sent to computer successfully"
+        return "Recovery Lock command sent to computer successfully"
+    }
+    else {
+        Write-Host "Something went wrong. Please check error for more details"
+        return $response
+    }
     
 }
-
-function getComputersFromAdvancedSearch($searchId)
-{
     
-    $uri = "https://$JamfTennantId/JSSResource/advancedcomputersearches/id/$searchId"
-    Write-Host $uri
-    $headers = @{Authorization = "Bearer $token"; "Content-Type" = "application/json; charset=utf-8"}
-
-    #$call = (Invoke-RestMethod -Method Get -Uri $uri -Headers $headers).results
-
-    $call = Invoke-RestMethod -Method Get -Uri $uri -Headers $headers
-
-    Write-Host $call
-
-    return $call
-}
-###################################
-## Authenticate
-###################################
-
-$token = getAuth
-$token = $token.token
-
 ###################################
 ## Runtime
 ###################################
@@ -81,61 +111,27 @@ $token = $token.token
 #Get All computers from the Jamf pro Advanced Search by the ID.
 #You may enter the ID number below if desired (string)
 
-$searchId="90"
+$searchId=""
 
-if (-not $searchId) {
+if (-not $searchId -or $searchId -eq "") {
     # Prompt the user for the ID number
     $searchId = Read-Host "Please enter the number of the advanced computer search you want to send the command to"
 }
 
-$recoveryPassword="http80Webserver#$"
+$recoveryPassword=""
 
-if (-not $recoveryPassword) {
+if (-not $recoveryPassword -or $recoveryPassword -eq "") {
     # Prompt the user for the desired recovery password
     $searchId = Read-Host "Please enter the recovery password you would like to set on these computers"
 }
 
-$computerIds = @()
-
 $computers = getComputersFromAdvancedSearch($searchId)
-Write-Host $computers
-
+#Write-Host $computers
 foreach ($computer in $computers) {
-    Write-Host $computer
-}
-
-
-
-#endAuth($token)
-<#
-
-
-foreach ($computer in $computers) 
-{
-    $computerIds = $computerIds + $computer.id
-}
-
-$count = 0
-
-#loop through Computer IDs.
-foreach ($computerId in $computerIds)
-{   
-    $count++
-    Write-Host "Computer No:" $count -ForegroundColor Yellow
-    Write-Host "Computer ID:" $computerId
-    #Get Detailed info for Computer
-    $computerDetails = getComputerDetail -computerId $computerId
-    Write-Host "Computer Name:" $computerDetails.general.name
-    Write-Host "Attatchment IDs:" $computerDetails.attachments.id
-    Write-Host "Attatchment Names:" $computerDetails.attachments.name
-    Write-Host ""
-    #Get attatchments and put IDs into a list.
-    $attatchmentIds = $computerDetails.attachments.id
-    #Loop over attatchment list and delete attatchment.
-    foreach ($attatchmentId in $attatchmentIds) {
-        Write-Host "This attatchment ID is:" $attatchmentId
-        deleteAttatchment -computerId $computerId -attatchmentId $attatchmentId
-    }
+    Write-Host "Processing computer:" $computer.name -ForegroundColor Yellow
+    $computerManagmentId = getComputerManagementIdByComputerId($computer.id)
+    Write-Host "Managment ID is:" $computerManagmentId -ForegroundColor Green
+    sendEnableRecoveryLockPasswordMDMCommand($computerManagmentId)
+    
 
 }
-#>
